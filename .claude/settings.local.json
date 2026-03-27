@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip list:*)",
+      "Bash(npm list:*)",
+      "Bash(pip --version)"
+    ]
+  }
+}
