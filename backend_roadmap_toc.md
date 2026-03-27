@@ -15,7 +15,7 @@
 ---
 
 ## 1. Internet (การทำงานของอินเทอร์เน็ต)
-- [ ] How does the internet work?
+- [x] [How does the internet work?](./how_does_internet_work.md)
 - [ ] What is HTTP?
 - [ ] DNS and how it works?
 - [ ] What is Domain Name?
@@ -47,14 +47,17 @@
 - [ ] Repo Hosting Services (GitHub / GitLab / Bitbucket)
 
 ## 6. Relational Databases (ฐานข้อมูลเชิงสัมพันธ์)
+- [x] [Database Schema](./Docs/Relational%20Databases/database_schema.md)
 - [ ] PostgreSQL
 - [ ] MySQL / MariaDB
 
 ## 7. NoSQL Databases (ฐานข้อมูลแบบไม่ใช่ Relational)
-- [ ] Document (MongoDB)
-- [ ] Key-Value (Redis)
-- [ ] Wide Column (Cassandra)
-- [ ] Graph (Neo4j)
+> **อ่านสรุป:** [What Is a NoSQL Database?](./nosql_databases.md)
+
+- [x] Document (MongoDB)
+- [x] Key-Value (Redis)
+- [x] Wide Column (Cassandra)
+- [x] Graph (Neo4j)
 
 ## 8. More about Databases (เทคนิคเชิงลึกของฐานข้อมูล)
 - [ ] ORMs (Object-Relational Mapping)
@@ -65,7 +68,7 @@
 - [ ] Indexes / Indexing
 - [ ] Replication
 - [ ] Sharding
-- [ ] CAP Theorem
+- [x] [CAP Theorem](./cap_theorem.md)
 
 ## 9. APIs (การเชื่อมต่อและให้บริการข้อมูล)
 - [ ] REST
