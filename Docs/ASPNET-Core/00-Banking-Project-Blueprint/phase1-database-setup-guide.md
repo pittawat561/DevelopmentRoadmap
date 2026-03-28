@@ -498,6 +498,7 @@ Entities → Add → Class → ชื่อ: Account.cs
 
 ```csharp
 using Banking.Domain.Enums;
+// 🔴 ห้ามใส่ using System.Transactions; — จะไปดึง Transaction ผิดตัว!
 
 namespace Banking.Domain.Entities;
 
@@ -510,16 +511,16 @@ public class Account : BaseEntity
     public string AccountNumber { get; set; } = string.Empty;
 
     public AccountType Type { get; set; } = AccountType.Savings;
-    public string Currency { get; set; } = "THB";  // สกุลเงินหลัก
+    public string Currency { get; set; } = "THB";  // 🔴 ชื่อ property คือ Currency (ไม่ใช่ Credits)
 
     // Balance: ยอดเงินจริงในบัญชี
     // AvailableBalance: ยอดที่ถอนได้ (อาจน้อยกว่า Balance ถ้ามียอดค้าง)
     // ทำไมต้องแยก: เวลาโอนเงิน → หักจาก Available ก่อน (hold) → พอสำเร็จค่อยหัก Balance
-    public decimal Balance { get; set; } = 0;
+    public decimal Balance { get; set; } = 0;              // 🔴 ห้ามลืม! ยอดเงินจริง
     public decimal AvailableBalance { get; set; } = 0;
 
     // วงเงินถอนต่อวัน — ป้องกันถอนเงินจำนวนมากผิดปกติ
-    public decimal DailyWithdrawalLimit { get; set; } = 50_000;
+    public decimal DailyWithdrawalLimit { get; set; } = 50_000;  // 🔴 ห้ามลืม! วงเงินถอนต่อวัน
 
     public AccountStatus Status { get; set; } = AccountStatus.Active;
 
