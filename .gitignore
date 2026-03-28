@@ -1,0 +1,163 @@
+# ===== .NET / C# =====
+## Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Bb]uild/
+bld/
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+msbuild.log
+msbuild.err
+msbuild.wrn
+
+## NuGet
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+*.nupkg
+*.snupkg
+**/packages/*
+!**/packages/build/
+.nuget/
+*.nuget.props
+*.nuget.targets
+project.lock.json
+
+## Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.rsuser
+[Tt]est[Rr]esult*/
+[Dd]ebugPublic/
+[Rr]eleases/
+*_i.c
+*_p.c
+*_h.h
+*.ilk
+*.meta
+*.obj
+*.iobj
+*.pch
+*.pdb
+*.ipdb
+*.pgc
+*.pgd
+*.rsp
+*.sbr
+*.tlb
+*.tli
+*.tlh
+*.tmp
+*.tmp_proj
+*_wpftmp.csproj
+*.log
+*.tlog
+*.vspscc
+*.vssscc
+.builds
+*.pidb
+*.svclog
+*.scc
+_Chutzpah*
+ipch/
+*.aps
+*.ncb
+*.opendb
+*.opensdf
+*.sdf
+*.cachefile
+*.VC.db
+*.VC.VC.opendb
+*.psess
+*.vsp
+*.vspx
+*.sap
+*.e2e
+*.cap
+*.dbmdl
+*.dbproj.schemaview
+*.jfm
+*.pfx
+*.publishsettings
+*.[Pp]ublish.xml
+*.azurePubxml
+*.pubxml
+PublishScripts/
+*.ncrunch*
+_NCrunch_*
+.*crunch*.local.xml
+nCrunchTemp_*
+*.unmanagedregistration.cpp
+BundleArtifacts/
+FakesAssemblies/
+AutoTest.Net/
+BenchmarkDotNet.Artifacts/
+project.fragment.lock.json
+
+## JetBrains Rider
+.idea/
+*.sln.iml
+
+## User-specific files
+*.DotSettings.user
+
+## Publish output
+publish/
+
+# ===== Node.js / Next.js =====
+node_modules/
+.next/
+out/
+.cache/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ===== Environment / Secrets =====
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+appsettings.*.local.json
+
+# ===== OS Files =====
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ===== IDE / Editor =====
+*.swp
+*.swo
+*~
+.vscode/settings.json
+.vscode/launch.json
+
+# ===== Docker =====
+docker-compose.override.yml
+
+# ===== Terraform =====
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!example.tfvars
+crash.log
+
+# ===== Redis =====
+dump.rdb
+
+# ===== Misc =====
+*.bak
+*.tmp
+*.temp
+*.cache

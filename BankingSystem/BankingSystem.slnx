@@ -1,0 +1,8 @@
+<Solution>
+  <Project Path="Banking.Api/Banking.Api.csproj" />
+  <Project Path="Banking.Application/Banking.Application.csproj" />
+  <Project Path="Banking.Domain/Banking.Domain.csproj" />
+  <Project Path="Banking.Infrastructure/Banking.Infrastructure.csproj" />
+  <Project Path="Banking.Tests.Integration/Banking.Tests.Integration.csproj" />
+  <Project Path="Banking.Tests.Unit/Banking.Tests.Unit.csproj" />
+</Solution>
