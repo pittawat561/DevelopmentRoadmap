@@ -56,68 +56,86 @@ Stack: **Next.js** (Frontend) + **ASP.NET Core** (Backend API) + **Redis** (Cach
 
 ## Phase 1: Database Design (ทำก่อนเลย!)
 
-### Core Tables
+### Core Tables (ตรงกับ C# Entity จริง)
 
 ```
-accounts
-├── id (PK, UUID)
-├── user_id (FK → users)
-├── account_number (UNIQUE, เช่น "1234-5678-9012")
-├── account_type (savings, checking, fixed_deposit)
-├── currency (THB, USD)
-├── balance (DECIMAL 18,2) ← ยอดเงินปัจจุบัน
-├── available_balance (DECIMAL 18,2) ← ยอดที่ใช้ได้ (หัก hold)
-├── daily_withdrawal_limit (DECIMAL 18,2)
-├── status (active, frozen, closed)
-├── created_at, updated_at
+users                                     ← C#: User.cs : BaseEntity
+├── id (PK, UUID)                         ← Guid Id (auto-generated)
+├── first_name VARCHAR(100) NOT NULL
+├── last_name VARCHAR(100) NOT NULL
+├── email VARCHAR(255) NOT NULL UNIQUE     ← Index: UNIQUE
+├── phone VARCHAR(20) NOT NULL UNIQUE      ← Index: UNIQUE
+├── password_hash VARCHAR(255) NOT NULL    ← BCrypt hash (ห้าม plain text!)
+├── national_id_hash VARCHAR(255)          ← hash ของบัตรประชาชน
+├── kyc_status VARCHAR(20)                 ← Enum → string: Pending/Verified/Rejected
+├── is_active BOOLEAN DEFAULT true
+├── is_locked BOOLEAN DEFAULT false
+├── failed_login_attempts INT DEFAULT 0
+├── last_login_at TIMESTAMP NULL
+├── created_at TIMESTAMP NOT NULL          ← BaseEntity (auto-set)
+├── updated_at TIMESTAMP NULL              ← BaseEntity (auto-set on update)
+├── is_deleted BOOLEAN DEFAULT false       ← Soft delete + QueryFilter
+│
+├── 🔗 Navigation: ICollection<Account> Accounts
+├── 📐 Computed: FullName => FirstName + LastName
 
-users
+accounts                                  ← C#: Account.cs : BaseEntity
 ├── id (PK, UUID)
-├── national_id_hash (เก็บ hash ไม่เก็บ plain!)
-├── first_name, last_name
-├── email (UNIQUE), phone (UNIQUE)
-├── password_hash
-├── kyc_status (pending, verified, rejected)
-├── is_active, is_locked
-├── failed_login_attempts
-├── last_login_at
-├── created_at, updated_at
+├── user_id UUID NOT NULL (FK → users)     ← Index + OnDelete: Restrict
+├── account_number VARCHAR(20) UNIQUE      ← เช่น "1234-5678-9012"
+├── type VARCHAR(20)                       ← Enum → string: Savings/Checking/FixedDeposit
+├── currency VARCHAR(3) DEFAULT 'THB'
+├── balance DECIMAL(18,2) DEFAULT 0        ← CHECK >= 0 (CK_accounts_balance_positive)
+├── available_balance DECIMAL(18,2) DEFAULT 0
+├── daily_withdrawal_limit DECIMAL(18,2) DEFAULT 50000
+├── status VARCHAR(20)                     ← Enum → string: Active/Frozen/Closed
+├── created_at, updated_at, is_deleted     ← BaseEntity
+│
+├── 🔗 Navigation: User User, ICollection<Transaction> Transactions
+├── 📐 Indexes: UserId, Status
 
-transactions
+transactions                              ← C#: Transaction.cs : BaseEntity
 ├── id (PK, UUID)
-├── reference_number (UNIQUE, เช่น "TXN-20240115-ABC123")
-├── account_id (FK → accounts)
-├── type (deposit, withdrawal, transfer_in, transfer_out, fee, interest)
-├── amount (DECIMAL 18,2)
-├── balance_before (DECIMAL 18,2) ← snapshot ก่อนทำรายการ
-├── balance_after (DECIMAL 18,2) ← snapshot หลังทำรายการ
-├── status (pending, processing, completed, failed, reversed)
-├── description
-├── related_transaction_id (FK → transactions, สำหรับ transfer คู่)
-├── metadata (JSONB — ข้อมูลเพิ่มเติม)
-├── ip_address
-├── created_at
+├── reference_number VARCHAR(50) UNIQUE    ← เช่น "TXN-20240115-ABC123"
+├── account_id UUID NOT NULL (FK → accounts) ← OnDelete: Restrict
+├── type VARCHAR(20)                       ← Enum → string: Deposit/Withdrawal/TransferIn/TransferOut/Fee/Interest
+├── amount DECIMAL(18,2)
+├── balance_before DECIMAL(18,2)           ← snapshot ก่อนทำรายการ
+├── balance_after DECIMAL(18,2)            ← snapshot หลังทำรายการ
+├── status VARCHAR(20)                     ← Enum → string: Pending/Processing/Completed/Failed/Reversed
+├── description VARCHAR(500)
+├── related_transaction_id UUID NULL (FK → transactions) ← self-ref สำหรับ transfer คู่
+├── metadata TEXT NULL                     ← JSON string ข้อมูลเพิ่มเติม
+├── ip_address VARCHAR(45)
+├── created_at, updated_at, is_deleted     ← BaseEntity
+│
+├── 🔗 Navigation: Account Account, Transaction? RelatedTransaction
+├── 📐 Indexes: AccountId, CreatedAt, (AccountId + CreatedAt) composite
 
-transfers
+transfers                                 ← C#: Transfer.cs : BaseEntity
 ├── id (PK, UUID)
-├── from_account_id (FK)
-├── to_account_id (FK)
-├── amount
-├── fee
-├── status
-├── debit_transaction_id (FK → transactions)
-├── credit_transaction_id (FK → transactions)
-├── created_at
+├── from_account_id UUID (FK → accounts)   ← OnDelete: Restrict
+├── to_account_id UUID (FK → accounts)     ← OnDelete: Restrict
+├── amount DECIMAL(18,2)
+├── fee DECIMAL(18,2) DEFAULT 0
+├── status VARCHAR(20)                     ← Enum → string
+├── debit_transaction_id UUID NULL (FK → transactions)
+├── credit_transaction_id UUID NULL (FK → transactions)
+├── created_at, updated_at, is_deleted     ← BaseEntity
 
-audit_logs
-├── id (PK, BIGINT)
-├── user_id
-├── action (login, deposit, withdrawal, transfer, settings_change)
-├── entity_type, entity_id
-├── old_values (JSONB)
-├── new_values (JSONB)
-├── ip_address, user_agent
-├── created_at
+audit_logs                                ← C#: AuditLog.cs (ไม่ inherit BaseEntity)
+├── id (PK, BIGINT IDENTITY)              ← auto-increment (ไม่ใช่ UUID — performance)
+├── user_id UUID NULL
+├── action VARCHAR(50) NOT NULL            ← login, deposit, withdrawal, transfer, settings_change
+├── entity_type VARCHAR(100) NOT NULL      ← "Account", "Transaction", etc.
+├── entity_id VARCHAR(100)
+├── old_values JSONB                       ← PostgreSQL JSONB — ข้อมูลก่อนเปลี่ยน
+├── new_values JSONB                       ← PostgreSQL JSONB — ข้อมูลหลังเปลี่ยน
+├── ip_address VARCHAR(45)
+├── user_agent VARCHAR(500)
+├── created_at TIMESTAMP NOT NULL
+│
+├── 📐 Indexes: UserId, CreatedAt, (EntityType + EntityId) composite
 ```
 
 ### Critical Constraints
@@ -133,44 +151,57 @@ audit_logs
 ### Project Structure (Clean Architecture)
 
 ```
-BankingApi/
-├── src/
-│   ├── Banking.Domain/
-│   │   ├── Entities/ (User, Account, Transaction, Transfer)
-│   │   ├── Enums/ (AccountType, TransactionType, TransactionStatus)
-│   │   ├── Interfaces/ (IAccountRepository, ITransactionRepository)
-│   │   ├── Exceptions/ (InsufficientFundsException, AccountFrozenException)
-│   │   └── Events/ (TransactionCompletedEvent, FraudDetectedEvent)
-│   │
-│   ├── Banking.Application/
-│   │   ├── Accounts/
-│   │   │   ├── Commands/ (CreateAccount, FreezeAccount)
-│   │   │   └── Queries/ (GetBalance, GetStatement)
-│   │   ├── Transactions/
-│   │   │   ├── Commands/ (Deposit, Withdraw, Transfer)
-│   │   │   └── Queries/ (GetTransaction, GetHistory)
-│   │   ├── Auth/
-│   │   │   └── Commands/ (Login, Register, RefreshToken)
-│   │   └── Common/
-│   │       ├── Behaviors/ (ValidationBehavior, LoggingBehavior, TransactionBehavior)
-│   │       └── Interfaces/ (ICurrentUser, IDateTimeProvider)
-│   │
-│   ├── Banking.Infrastructure/
-│   │   ├── Data/ (AppDbContext, Configurations/, Migrations/)
-│   │   ├── Repositories/
-│   │   ├── Services/ (RedisCache, EmailService, SmsService)
-│   │   ├── BackgroundJobs/ (DailyInterestJob, StatementGeneratorJob)
-│   │   └── ExternalServices/ (BankGateway, FraudDetection)
-│   │
-│   └── Banking.Api/
-│       ├── Controllers/ (AccountsController, TransactionsController, AuthController)
-│       ├── Hubs/ (NotificationHub — real-time balance updates)
-│       ├── Middleware/ (ExceptionMiddleware, RateLimitMiddleware, AuditMiddleware)
-│       └── Program.cs
+BankingSystem/                        ← Solution root
+├── BankingSystem.slnx                ← Solution file (.NET 10 ใช้ .slnx)
 │
-└── tests/
-    ├── Banking.Tests.Unit/
-    └── Banking.Tests.Integration/
+├── Banking.Domain/                   ← 🟢 Entities, Enums, Interfaces (ไม่ reference ใคร)
+│   ├── Entities/
+│   │   ├── BaseEntity.cs            ← Id, CreatedAt, UpdatedAt, IsDeleted
+│   │   ├── User.cs                  ← ข้อมูลผู้ใช้ + KYC + Navigation → Accounts
+│   │   ├── Account.cs               ← บัญชี + Balance + DailyWithdrawalLimit
+│   │   ├── Transaction.cs           ← ทุกการเคลื่อนไหว (ฝาก/ถอน/โอน)
+│   │   ├── Transfer.cs              ← โอนเงิน (from → to + debit/credit transactions)
+│   │   └── AuditLog.cs              ← บันทึกทุกการกระทำ (JSONB old/new values)
+│   ├── Enums/
+│   │   └── Enums.cs                 ← AccountType, AccountStatus, TransactionType, TransactionStatus, KycStatus
+│   ├── Interfaces/
+│   │   └── IRepositories.cs         ← IRepository<T>, IUserRepository, IAccountRepository, ITransactionRepository, IUnitOfWork
+│   └── Exceptions/
+│       └── DomainExceptions.cs      ← InsufficientFunds, AccountFrozen, DailyLimitExceeded, etc.
+│
+├── Banking.Application/              ← 🟡 Business Logic (Commands, Queries, DTOs, Validators)
+│   ├── Accounts/
+│   │   ├── Commands/ (CreateAccount, FreezeAccount)
+│   │   └── Queries/ (GetBalance, GetStatement)
+│   ├── Transactions/
+│   │   ├── Commands/ (Deposit, Withdraw, Transfer)
+│   │   └── Queries/ (GetTransaction, GetHistory)
+│   ├── Auth/
+│   │   └── Commands/ (Login, Register, RefreshToken)
+│   └── Common/
+│       ├── Behaviors/ (ValidationBehavior, LoggingBehavior, TransactionBehavior)
+│       └── Interfaces/ (ICurrentUser, IDateTimeProvider)
+│
+├── Banking.Infrastructure/           ← 🔴 Database, Redis, External Services
+│   ├── Data/
+│   │   └── AppDbContext.cs          ← DbContext + auto timestamp + SaveChangesAsync override
+│   ├── Configurations/              ← Fluent API configs (UserConfiguration, AccountConfiguration, etc.)
+│   ├── Migrations/                  ← EF Core auto-generated migrations
+│   ├── Repositories/
+│   ├── Services/ (RedisCache, EmailService, SmsService)
+│   ├── BackgroundJobs/ (DailyInterestJob, StatementGeneratorJob)
+│   └── Seeds/
+│       └── DataSeeder.cs            ← Demo data (Admin + Demo user + Accounts)
+│
+├── Banking.Api/                      ← 🔵 Controllers, Middleware, Program.cs (.NET 10)
+│   ├── Controllers/ (AccountsController, TransactionsController, AuthController)
+│   ├── Hubs/ (NotificationHub — real-time balance updates)
+│   ├── Middleware/ (ExceptionMiddleware, RateLimitMiddleware, AuditMiddleware)
+│   ├── appsettings.json
+│   └── Program.cs
+│
+├── Banking.Tests.Unit/               ← Unit tests (xUnit + Moq + FluentAssertions)
+└── Banking.Tests.Integration/        ← Integration tests (WebApplicationFactory)
 ```
 
 ### Critical API Endpoints
@@ -424,7 +455,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
-        with: { dotnet-version: '9.0.x' }
+        with: { dotnet-version: '10.0.x' }
 
       - run: dotnet restore
       - run: dotnet build -c Release --no-restore
@@ -483,7 +514,7 @@ jobs:
       - uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./src/Banking.Api/Dockerfile
+          file: ./Banking.Api/Dockerfile
           push: true
           tags: ghcr.io/${{ github.repository }}/api:${{ github.sha }}
 
@@ -605,18 +636,18 @@ Setup:
 ### Dockerfile สำหรับ Deploy
 
 ```dockerfile
-# src/Banking.Api/Dockerfile
-FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+# Banking.Api/Dockerfile
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
-COPY ["src/Banking.Api/Banking.Api.csproj", "Banking.Api/"]
-COPY ["src/Banking.Domain/Banking.Domain.csproj", "Banking.Domain/"]
-COPY ["src/Banking.Application/Banking.Application.csproj", "Banking.Application/"]
-COPY ["src/Banking.Infrastructure/Banking.Infrastructure.csproj", "Banking.Infrastructure/"]
+COPY ["Banking.Api/Banking.Api.csproj", "Banking.Api/"]
+COPY ["Banking.Domain/Banking.Domain.csproj", "Banking.Domain/"]
+COPY ["Banking.Application/Banking.Application.csproj", "Banking.Application/"]
+COPY ["Banking.Infrastructure/Banking.Infrastructure.csproj", "Banking.Infrastructure/"]
 RUN dotnet restore "Banking.Api/Banking.Api.csproj"
-COPY src/ .
+COPY . .
 RUN dotnet publish "Banking.Api/Banking.Api.csproj" -c Release -o /app
 
-FROM mcr.microsoft.com/dotnet/aspnet:9.0
+FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
 RUN adduser --disabled-password appuser && chown -R appuser /app
 USER appuser
@@ -651,7 +682,7 @@ CMD ["node", "server.js"]
 # railway.toml (ใน root ของ backend project)
 [build]
 builder = "dockerfile"
-dockerfilePath = "src/Banking.Api/Dockerfile"
+dockerfilePath = "Banking.Api/Dockerfile"
 
 [deploy]
 healthcheckPath = "/health"
@@ -722,7 +753,7 @@ Step 7: Setup CI/CD
 
 ## Tech Stack
 - **Frontend:** Next.js 15, React, Tailwind CSS, SignalR
-- **Backend:** ASP.NET Core 9, Clean Architecture, CQRS + MediatR
+- **Backend:** ASP.NET Core 10 (.NET 10), Clean Architecture, CQRS + MediatR
 - **Database:** PostgreSQL + Redis
 - **Real-time:** SignalR WebSocket
 - **CI/CD:** GitHub Actions → Docker → Railway + Vercel
