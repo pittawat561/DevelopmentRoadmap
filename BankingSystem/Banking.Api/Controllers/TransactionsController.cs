@@ -1,10 +1,7 @@
-﻿using Banking.Application.DTOs;
+using Banking.Application.DTOs;
 using Banking.Application.Services;
-using Banking.Domain.Exceptions;
 using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
-using System.Runtime.InteropServices;
-using static System.Net.Mime.MediaTypeNames;
 
 namespace Banking.Api.Controllers;
 
@@ -14,11 +11,19 @@ public class TransactionsController : ControllerBase
 {
     private readonly TransactionService _transactionService;
     private readonly IValidator<DepositRequest> _depositValidator;
+    private readonly IValidator<WithdrawRequest> _withdrawValidator;
+    private readonly IValidator<TransferRequest> _transferValidator;
 
-    public TransactionsController(TransactionService transactionService, IValidator<DepositRequest> depositValidator)
+    public TransactionsController(
+        TransactionService transactionService,
+        IValidator<DepositRequest> depositValidator,
+        IValidator<WithdrawRequest> withdrawValidator,
+        IValidator<TransferRequest> transferValidator)
     {
         _transactionService = transactionService;
         _depositValidator = depositValidator;
+        _withdrawValidator = withdrawValidator;
+        _transferValidator = transferValidator;
     }
 
     /// <summary>
@@ -48,33 +53,15 @@ public class TransactionsController : ControllerBase
     public async Task<IActionResult> Withdraw(
         [FromBody] WithdrawRequest request, CancellationToken ct)
     {
-        try
-        {
-            var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
-            var result = await _transactionService.WithdrawAsync(request, ipAddress, ct);
+        var validation = await _withdrawValidator.ValidateAsync(request, ct);
+        if (!validation.IsValid)
+            return BadRequest(new ApiResponse<object>(false,
+                string.Join("; ", validation.Errors.Select(e => e.ErrorMessage))));
 
-            return Ok(new ApiResponse<TransactionResponse>(
-                Success: true,
-                Message: $"Withdrawal of {request.Amount:N2} THB completed.",
-                Data: result
-            ));
-        }
-        catch (NotFoundException ex)
-        {
-            return NotFound(new ApiResponse<object>(false, ex.Message));
-        }
-        catch (InsufficientFundsException ex)
-        {
-            return BadRequest(new ApiResponse<object>(false, ex.Message));
-        }
-        catch (DailyLimitExceededException ex)
-        {
-            return BadRequest(new ApiResponse<object>(false, ex.Message));
-        }
-        catch (AccountFrozenException ex)
-        {
-            return BadRequest(new ApiResponse<object>(false, ex.Message));
-        }
+        var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var result = await _transactionService.WithdrawAsync(request, ipAddress, ct);
+        return Ok(new ApiResponse<TransactionResponse>(
+            true, $"Withdrawal of {request.Amount:N2} THB completed.", result));
     }
 
     /// <summary>
@@ -85,38 +72,20 @@ public class TransactionsController : ControllerBase
     public async Task<IActionResult> Transfer(
         [FromBody] TransferRequest request, CancellationToken ct)
     {
-        try
-        {
-            var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
-            var result = await _transactionService.TransferAsync(request, ipAddress, ct);
+        var validation = await _transferValidator.ValidateAsync(request, ct);
+        if (!validation.IsValid)
+            return BadRequest(new ApiResponse<object>(false,
+                string.Join("; ", validation.Errors.Select(e => e.ErrorMessage))));
 
-            return Ok(new ApiResponse<TransactionResponse>(
-                Success: true,
-                Message: $"Transfer of {request.Amount:N2} THB completed.",
-                Data: result
-            ));
-        }
-        catch (NotFoundException ex)
-        {
-            return NotFound(new ApiResponse<object>(false, ex.Message));
-        }
-        catch (InsufficientFundsException ex)
-        {
-            return BadRequest(new ApiResponse<object>(false, ex.Message));
-        }
-        catch (DailyLimitExceededException ex)
-        {
-            return BadRequest(new ApiResponse<object>(false, ex.Message));
-        }
-        catch (AccountFrozenException ex)
-        {
-            return BadRequest(new ApiResponse<object>(false, ex.Message));
-        }
+        var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var result = await _transactionService.TransferAsync(request, ipAddress, ct);
+        return Ok(new ApiResponse<TransactionResponse>(
+            true, $"Transfer of {request.Amount:N2} THB completed.", result));
     }
 
     /// <summary>
     /// ดูประวัติธุรกรรม (Pagination)
-    /// GET /api/transactions?accountId=xxx&page=1&pageSize=20
+    /// GET /api/transactions?accountId=xxx&amp;page=1&amp;pageSize=20
     /// </summary>
     [HttpGet]
     public async Task<IActionResult> GetHistory(
@@ -129,9 +98,6 @@ public class TransactionsController : ControllerBase
             accountId, page, pageSize, ct);
 
         return Ok(new ApiResponse<PagedResponse<TransactionResponse>>(
-            Success: true,
-            Message: "Transaction history retrieved.",
-            Data: result
-        ));
+            true, "Transaction history retrieved.", result));
     }
 }

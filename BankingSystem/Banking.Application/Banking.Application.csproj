@@ -10,7 +10,6 @@
     <PackageReference Include="BCrypt.Net-Next" Version="4.1.0" />
     <PackageReference Include="FluentValidation" Version="12.1.1" />
     <PackageReference Include="MediatR" Version="14.1.0" />
-    <PackageReference Include="Microsoft.AspNetCore.Mvc.Core" Version="2.3.9" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.5" />
   </ItemGroup>
 
@@ -18,8 +17,5 @@
     <ProjectReference Include="..\Banking.Domain\Banking.Domain.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="Auth\" />
-  </ItemGroup>
 
 </Project>

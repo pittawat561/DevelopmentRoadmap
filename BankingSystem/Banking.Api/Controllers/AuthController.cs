@@ -1,6 +1,5 @@
 ﻿using Banking.Application.DTOs;
 using Banking.Application.Services;
-using Banking.Application.DTOs;
 using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
