@@ -17,10 +17,17 @@ namespace Banking.Application.Services;
 public class TransactionService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IRedisCacheService _cache;
+    private readonly INotificationService _notification;
 
-    public TransactionService(IUnitOfWork unitOfWork)
+    public TransactionService(
+        IUnitOfWork unitOfWork,
+        IRedisCacheService cache,
+        INotificationService notification)
     {
         _unitOfWork = unitOfWork;
+        _cache = cache;
+        _notification = notification;
     }
 
     // =====================================================
@@ -46,33 +53,36 @@ public class TransactionService
     public async Task<TransactionResponse> DepositAsync(
         DepositRequest request, string? ipAddress = null, CancellationToken ct = default)
     {
-        // === 1. Validate Input ===
         if (request.Amount <= 0)
             throw new ArgumentException("Amount must be greater than 0.");
 
+        // === Distributed Lock ===
+        var lockKey = $"account:{request.AccountId}";
+        var lockValue = Guid.NewGuid().ToString();
+        var lockExpiry = TimeSpan.FromSeconds(10);
+
+        if (!await _cache.AcquireLockAsync(lockKey, lockValue, lockExpiry))
+            throw new InvalidOperationException(
+                "Account is being processed. Please try again.");
+
         try
         {
-            // === 2. Begin DB Transaction ===
             await _unitOfWork.BeginTransactionAsync(ct);
 
-            // === 3. Lock account row (ป้องกัน Race Condition) ===
             var account = await _unitOfWork.Accounts
                 .GetByIdForUpdateAsync(request.AccountId, ct);
 
-            // === 4. Validate Account ===
             if (account is null)
                 throw new NotFoundException("Account", request.AccountId);
 
             if (account.Status != AccountStatus.Active)
                 throw new AccountFrozenException(account.AccountNumber);
 
-            // === 5. Update Balance ===
             var balanceBefore = account.Balance;
             account.Balance += request.Amount;
             account.AvailableBalance += request.Amount;
             _unitOfWork.Accounts.Update(account);
 
-            // === 6. Create Transaction Record ===
             var transaction = new Transaction
             {
                 ReferenceNumber = ReferenceNumberGenerator.Generate(),
@@ -88,17 +98,34 @@ public class TransactionService
 
             await _unitOfWork.Transactions.AddAsync(transaction, ct);
             await _unitOfWork.SaveChangesAsync(ct);
-
-            // === 7. Commit Transaction ===
             await _unitOfWork.CommitTransactionAsync(ct);
+
+            // === Cache: อัปเดต balance cache ===
+            await _cache.SetBalanceCacheAsync(
+                account.Id, account.Balance, account.AvailableBalance);
+
+            // === Notify: แจ้ง client real-time ===
+            await _notification.NotifyBalanceUpdatedAsync(
+                account.UserId, account.Id,
+                account.Balance, account.AvailableBalance);
+
+            await _notification.NotifyTransactionAsync(
+                account.UserId,
+                TransactionType.Deposit.ToString(),
+                request.Amount,
+                transaction.ReferenceNumber);
 
             return MapToResponse(transaction);
         }
         catch
         {
-            // ถ้ามี error → rollback ทุกอย่าง
             await _unitOfWork.RollbackTransactionAsync(ct);
-            throw;  // ส่ง error ต่อให้ Controller จัดการ
+            throw;
+        }
+        finally
+        {
+            // === ปลด lock เสมอ (สำเร็จหรือไม่ก็ตาม) ===
+            await _cache.ReleaseLockAsync(lockKey, lockValue);
         }
     }
 
@@ -130,6 +157,13 @@ public class TransactionService
         if (request.Amount <= 0)
             throw new ArgumentException("Amount must be greater than 0.");
 
+        var lockKey = $"account:{request.AccountId}";
+        var lockValue = Guid.NewGuid().ToString();
+
+        if (!await _cache.AcquireLockAsync(lockKey, lockValue, TimeSpan.FromSeconds(10)))
+            throw new InvalidOperationException(
+                "Account is being processed. Please try again.");
+
         try
         {
             await _unitOfWork.BeginTransactionAsync(ct);
@@ -143,11 +177,9 @@ public class TransactionService
             if (account.Status != AccountStatus.Active)
                 throw new AccountFrozenException(account.AccountNumber);
 
-            // === 5. Check: เงินพอไหม? ===
             if (account.Balance < request.Amount)
                 throw new InsufficientFundsException(account.Balance, request.Amount);
 
-            // === 6. Check: Daily Limit ===
             var todayTotal = await _unitOfWork.Transactions
                 .GetTodayWithdrawalTotalAsync(account.Id, ct);
 
@@ -155,13 +187,11 @@ public class TransactionService
                 throw new DailyLimitExceededException(
                     account.DailyWithdrawalLimit, todayTotal, request.Amount);
 
-            // === 7. Update Balance ===
             var balanceBefore = account.Balance;
             account.Balance -= request.Amount;
             account.AvailableBalance -= request.Amount;
             _unitOfWork.Accounts.Update(account);
 
-            // === 8. Create Transaction Record ===
             var transaction = new Transaction
             {
                 ReferenceNumber = ReferenceNumberGenerator.Generate(),
@@ -177,8 +207,20 @@ public class TransactionService
 
             await _unitOfWork.Transactions.AddAsync(transaction, ct);
             await _unitOfWork.SaveChangesAsync(ct);
-
             await _unitOfWork.CommitTransactionAsync(ct);
+
+            await _cache.SetBalanceCacheAsync(
+                account.Id, account.Balance, account.AvailableBalance);
+
+            await _notification.NotifyBalanceUpdatedAsync(
+                account.UserId, account.Id,
+                account.Balance, account.AvailableBalance);
+
+            await _notification.NotifyTransactionAsync(
+                account.UserId,
+                TransactionType.Withdrawal.ToString(),
+                request.Amount,
+                transaction.ReferenceNumber);
 
             return MapToResponse(transaction);
         }
@@ -186,6 +228,10 @@ public class TransactionService
         {
             await _unitOfWork.RollbackTransactionAsync(ct);
             throw;
+        }
+        finally
+        {
+            await _cache.ReleaseLockAsync(lockKey, lockValue);
         }
     }
 
@@ -220,17 +266,36 @@ public class TransactionService
         if (request.FromAccountId == request.ToAccountId)
             throw new ArgumentException("Cannot transfer to the same account.");
 
+        // Lock ตามลำดับ ID → ป้องกัน deadlock
+        var firstId = request.FromAccountId < request.ToAccountId
+            ? request.FromAccountId : request.ToAccountId;
+        var secondId = request.FromAccountId < request.ToAccountId
+            ? request.ToAccountId : request.FromAccountId;
+
+        var lockValue1 = Guid.NewGuid().ToString();
+        var lockValue2 = Guid.NewGuid().ToString();
+        var lockExpiry = TimeSpan.FromSeconds(10);
+
+        if (!await _cache.AcquireLockAsync($"account:{firstId}", lockValue1, lockExpiry))
+            throw new InvalidOperationException(
+                "Account is being processed. Please try again.");
+
+        if (!await _cache.AcquireLockAsync($"account:{secondId}", lockValue2, lockExpiry))
+        {
+            await _cache.ReleaseLockAsync($"account:{firstId}", lockValue1);
+            throw new InvalidOperationException(
+                "Account is being processed. Please try again.");
+        }
+
         try
         {
             await _unitOfWork.BeginTransactionAsync(ct);
 
-            // === 3. Lock ทั้ง 2 บัญชี ===
             var fromAccount = await _unitOfWork.Accounts
                 .GetByIdForUpdateAsync(request.FromAccountId, ct);
             var toAccount = await _unitOfWork.Accounts
                 .GetByIdForUpdateAsync(request.ToAccountId, ct);
 
-            // === 4. Validate ===
             if (fromAccount is null)
                 throw new NotFoundException("Source Account", request.FromAccountId);
             if (toAccount is null)
@@ -241,7 +306,6 @@ public class TransactionService
             if (toAccount.Status != AccountStatus.Active)
                 throw new AccountFrozenException(toAccount.AccountNumber);
 
-            // === 5. Check เงินพอ + Daily Limit ===
             if (fromAccount.Balance < request.Amount)
                 throw new InsufficientFundsException(fromAccount.Balance, request.Amount);
 
@@ -252,20 +316,17 @@ public class TransactionService
                 throw new DailyLimitExceededException(
                     fromAccount.DailyWithdrawalLimit, todayTotal, request.Amount);
 
-            // === 6. Update Balances ===
             var fromBefore = fromAccount.Balance;
             var toBefore = toAccount.Balance;
 
             fromAccount.Balance -= request.Amount;
             fromAccount.AvailableBalance -= request.Amount;
-
             toAccount.Balance += request.Amount;
             toAccount.AvailableBalance += request.Amount;
 
             _unitOfWork.Accounts.Update(fromAccount);
             _unitOfWork.Accounts.Update(toAccount);
 
-            // === 7. Create 2 Transactions ===
             var debitTxn = new Transaction
             {
                 ReferenceNumber = ReferenceNumberGenerator.Generate(),
@@ -294,14 +355,12 @@ public class TransactionService
                 IpAddress = ipAddress
             };
 
-            // เชื่อมคู่ transaction เข้าด้วยกัน
             debitTxn.RelatedTransactionId = creditTxn.Id;
             creditTxn.RelatedTransactionId = debitTxn.Id;
 
             await _unitOfWork.Transactions.AddAsync(debitTxn, ct);
             await _unitOfWork.Transactions.AddAsync(creditTxn, ct);
 
-            // === 8. Create Transfer Record ===
             var transfer = new Transfer
             {
                 FromAccountId = fromAccount.Id,
@@ -313,11 +372,31 @@ public class TransactionService
                 CreditTransactionId = creditTxn.Id
             };
 
-            // เพิ่ม transfer ผ่าน DbContext ตรง (ไม่มี ITransferRepository)
             await _unitOfWork.SaveChangesAsync(ct);
-
-            // === 9. Commit ===
             await _unitOfWork.CommitTransactionAsync(ct);
+
+            // Cache: อัปเดตทั้ง 2 บัญชี
+            await _cache.SetBalanceCacheAsync(
+                fromAccount.Id, fromAccount.Balance, fromAccount.AvailableBalance);
+            await _cache.SetBalanceCacheAsync(
+                toAccount.Id, toAccount.Balance, toAccount.AvailableBalance);
+
+            // Notify: แจ้งทั้ง 2 users
+            await _notification.NotifyBalanceUpdatedAsync(
+                fromAccount.UserId, fromAccount.Id,
+                fromAccount.Balance, fromAccount.AvailableBalance);
+            await _notification.NotifyBalanceUpdatedAsync(
+                toAccount.UserId, toAccount.Id,
+                toAccount.Balance, toAccount.AvailableBalance);
+
+            await _notification.NotifyTransactionAsync(
+                fromAccount.UserId,
+                TransactionType.TransferOut.ToString(),
+                request.Amount, debitTxn.ReferenceNumber);
+            await _notification.NotifyTransactionAsync(
+                toAccount.UserId,
+                TransactionType.TransferIn.ToString(),
+                request.Amount, creditTxn.ReferenceNumber);
 
             return MapToResponse(debitTxn);
         }
@@ -325,6 +404,11 @@ public class TransactionService
         {
             await _unitOfWork.RollbackTransactionAsync(ct);
             throw;
+        }
+        finally
+        {
+            await _cache.ReleaseLockAsync($"account:{secondId}", lockValue2);
+            await _cache.ReleaseLockAsync($"account:{firstId}", lockValue1);
         }
     }
 
@@ -355,7 +439,6 @@ public class TransactionService
     // =====================================================
     // Helper: Entity → DTO
     // =====================================================
-
     private static TransactionResponse MapToResponse(Transaction t) => new(
         Id: t.Id,
         ReferenceNumber: t.ReferenceNumber,

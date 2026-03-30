@@ -3,6 +3,7 @@ using Banking.Application.Services;
 using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 
 namespace Banking.Api.Controllers;
@@ -14,20 +15,20 @@ public class AuthController : ControllerBase
     private readonly AuthService _authService;
     private readonly IValidator<RegisterRequest> _registerValidator;
     private readonly IValidator<LoginRequest> _loginValidator;
+    private readonly IRedisCacheService _cache;
 
     public AuthController(
         AuthService authService,
         IValidator<RegisterRequest> registerValidator,
-        IValidator<LoginRequest> loginValidator)
+        IValidator<LoginRequest> loginValidator,
+        IRedisCacheService cache)
     {
         _authService = authService;
         _registerValidator = registerValidator;
         _loginValidator = loginValidator;
+        _cache = cache;
     }
 
-    /// <summary>
-    /// สมัครสมาชิก — POST /api/auth/register
-    /// </summary>
     [HttpPost("register")]
     [AllowAnonymous]
     public async Task<IActionResult> Register(
@@ -43,9 +44,6 @@ public class AuthController : ControllerBase
             new ApiResponse<AuthResponse>(true, "Registration successful.", result));
     }
 
-    /// <summary>
-    /// เข้าสู่ระบบ — POST /api/auth/login
-    /// </summary>
     [HttpPost("login")]
     [AllowAnonymous]
     public async Task<IActionResult> Login(
@@ -60,10 +58,6 @@ public class AuthController : ControllerBase
         return Ok(new ApiResponse<AuthResponse>(true, "Login successful.", result));
     }
 
-    /// <summary>
-    /// ดูโปรไฟล์ (ต้อง login) — GET /api/auth/profile
-    /// User.FindFirst(ClaimTypes.NameIdentifier) ดึง userId จาก JWT token
-    /// </summary>
     [HttpGet("profile")]
     [Authorize]
     public async Task<IActionResult> Profile(CancellationToken ct)
@@ -77,14 +71,35 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
-    /// ออกจากระบบ — POST /api/auth/logout
-    /// Placeholder สำหรับ Phase 3 (Redis token blacklist)
+    /// Logout — Blacklist token ใน Redis
+    ///
+    /// Flow:
+    /// 1. ดึง JWT จาก Authorization header
+    /// 2. อ่าน JTI + expiration จาก token
+    /// 3. เก็บ JTI ลง Redis พร้อม TTL = เวลาที่เหลือก่อน token หมดอายุ
+    /// 4. ทุก request หลังจากนี้จะถูก reject โดย TokenBlacklistMiddleware
     /// </summary>
     [HttpPost("logout")]
     [Authorize]
-    public IActionResult Logout()
+    public async Task<IActionResult> Logout()
     {
-        // TODO Phase 3: เพิ่ม JTI ลง Redis blacklist
+        var authHeader = Request.Headers.Authorization.FirstOrDefault();
+        if (authHeader is not null && authHeader.StartsWith("Bearer "))
+        {
+            var token = authHeader["Bearer ".Length..];
+            var handler = new JwtSecurityTokenHandler();
+            var jwtToken = handler.ReadJwtToken(token);
+
+            var jti = jwtToken.Id;
+            var expiry = jwtToken.ValidTo;
+            var ttl = expiry - DateTime.UtcNow;
+
+            if (!string.IsNullOrEmpty(jti) && ttl > TimeSpan.Zero)
+            {
+                await _cache.BlacklistTokenAsync(jti, ttl);
+            }
+        }
+
         return Ok(new ApiResponse<object>(true, "Logged out successfully."));
     }
 }

@@ -1,7 +1,6 @@
 ﻿using Banking.Application.DTOs;
 using Banking.Application.Services;
 using Banking.Domain.Enums;
-using Banking.Domain.Exceptions;
 using Banking.Domain.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 
@@ -12,10 +11,12 @@ namespace Banking.Api.Controllers;
 public class AccountsController : ControllerBase
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IRedisCacheService _cache;
 
-    public AccountsController(IUnitOfWork unitOfWork)
+    public AccountsController(IUnitOfWork unitOfWork, IRedisCacheService cache)
     {
         _unitOfWork = unitOfWork;
+        _cache = cache;
     }
 
     /// <summary>
@@ -75,15 +76,34 @@ public class AccountsController : ControllerBase
     [HttpGet("{id:guid}/balance")]
     public async Task<IActionResult> GetBalance(Guid id, CancellationToken ct)
     {
+        // 1. ดูใน cache ก่อน
+        var cached = await _cache.GetBalanceCacheAsync(id);
+        if (cached.HasValue)
+        {
+            return Ok(new ApiResponse<object>(true, "Balance retrieved (cached).", new
+            {
+                Balance = cached.Value.Balance,
+                AvailableBalance = cached.Value.AvailableBalance,
+                Currency = "THB",
+                Source = "cache"
+            }));
+        }
+
+        // 2. Cache miss → query DB
         var account = await _unitOfWork.Accounts.GetByIdAsync(id, ct);
         if (account is null)
             return NotFound(new ApiResponse<object>(false, "Account not found."));
+
+        // 3. เก็บ cache สำหรับครั้งหน้า
+        await _cache.SetBalanceCacheAsync(
+            account.Id, account.Balance, account.AvailableBalance);
 
         return Ok(new ApiResponse<object>(true, "Balance retrieved.", new
         {
             account.Balance,
             account.AvailableBalance,
-            account.Currency
+            account.Currency,
+            Source = "database"
         }));
     }
 
@@ -95,7 +115,6 @@ public class AccountsController : ControllerBase
     public async Task<IActionResult> Create(
         [FromBody] CreateAccountRequest request, CancellationToken ct)
     {
-        // สร้างเลขบัญชีที่ไม่ซ้ำ
         string accountNumber;
         do
         {
