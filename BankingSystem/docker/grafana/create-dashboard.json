@@ -1,0 +1,76 @@
+{
+  "dashboard": {
+    "title": "Banking API Monitoring",
+    "tags": ["banking", "api", "dotnet"],
+    "timezone": "browser",
+    "refresh": "10s",
+    "time": { "from": "now-1h", "to": "now" },
+    "panels": [
+      {
+        "id": 1,
+        "type": "timeseries",
+        "title": "HTTP Request Rate (req/s)",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+        "targets": [{ "expr": "rate(http_requests_received_total[1m])", "legendFormat": "{{instance}} {{method}} {{code}}", "refId": "A" }],
+        "datasource": { "type": "prometheus", "uid": "efholvtdbxptsd" }
+      },
+      {
+        "id": 2,
+        "type": "timeseries",
+        "title": "HTTP Request Duration (avg seconds)",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+        "targets": [{ "expr": "rate(http_request_duration_seconds_sum[1m]) / rate(http_request_duration_seconds_count[1m])", "legendFormat": "{{instance}} avg", "refId": "A" }],
+        "datasource": { "type": "prometheus", "uid": "efholvtdbxptsd" }
+      },
+      {
+        "id": 3,
+        "type": "gauge",
+        "title": "Requests In Progress",
+        "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
+        "targets": [{ "expr": "http_requests_in_progress", "legendFormat": "{{instance}}", "refId": "A" }],
+        "datasource": { "type": "prometheus", "uid": "efholvtdbxptsd" }
+      },
+      {
+        "id": 4,
+        "type": "timeseries",
+        "title": "Process CPU Usage (rate)",
+        "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 },
+        "targets": [{ "expr": "rate(process_cpu_seconds_total[1m])", "legendFormat": "{{instance}}", "refId": "A" }],
+        "datasource": { "type": "prometheus", "uid": "efholvtdbxptsd" }
+      },
+      {
+        "id": 5,
+        "type": "timeseries",
+        "title": "Process Memory (MB)",
+        "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 },
+        "targets": [{ "expr": "process_working_set_bytes / 1024 / 1024", "legendFormat": "{{instance}}", "refId": "A" }],
+        "datasource": { "type": "prometheus", "uid": "efholvtdbxptsd" }
+      },
+      {
+        "id": 6,
+        "type": "timeseries",
+        "title": "GC Collection Count (rate)",
+        "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 },
+        "targets": [{ "expr": "rate(dotnet_collection_count_total[1m])", "legendFormat": "{{instance}} gen{{generation}}", "refId": "A" }],
+        "datasource": { "type": "prometheus", "uid": "efholvtdbxptsd" }
+      },
+      {
+        "id": 7,
+        "type": "stat",
+        "title": "Total .NET Memory (MB)",
+        "gridPos": { "h": 8, "w": 8, "x": 8, "y": 16 },
+        "targets": [{ "expr": "dotnet_total_memory_bytes / 1024 / 1024", "legendFormat": "{{instance}}", "refId": "A" }],
+        "datasource": { "type": "prometheus", "uid": "efholvtdbxptsd" }
+      },
+      {
+        "id": 8,
+        "type": "stat",
+        "title": "Process Threads",
+        "gridPos": { "h": 8, "w": 8, "x": 16, "y": 16 },
+        "targets": [{ "expr": "process_num_threads", "legendFormat": "{{instance}}", "refId": "A" }],
+        "datasource": { "type": "prometheus", "uid": "efholvtdbxptsd" }
+      }
+    ]
+  },
+  "overwrite": true
+}

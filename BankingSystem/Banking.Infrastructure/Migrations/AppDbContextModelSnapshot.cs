@@ -298,6 +298,9 @@ namespace Banking.Infrastructure.Migrations
                     b.Property<int>("FailedLoginAttempts")
                         .HasColumnType("integer");
 
+                    b.Property<int>("FailedPinAttempts")
+                        .HasColumnType("integer");
+
                     b.Property<string>("FirstName")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -310,6 +313,9 @@ namespace Banking.Infrastructure.Migrations
                         .HasColumnType("boolean");
 
                     b.Property<bool>("IsLocked")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsTransactionLocked")
                         .HasColumnType("boolean");
 
                     b.Property<string>("KycStatus")
@@ -338,6 +344,9 @@ namespace Banking.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
+
+                    b.Property<string>("PinHash")
+                        .HasColumnType("text");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");

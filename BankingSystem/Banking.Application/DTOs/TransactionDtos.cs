@@ -6,7 +6,8 @@
 public record DepositRequest(
     Guid AccountId,
     decimal Amount,
-    string? Description
+    string? Description,
+    string Pin
 );
 
 /// <summary>
@@ -15,7 +16,8 @@ public record DepositRequest(
 public record WithdrawRequest(
     Guid AccountId,
     decimal Amount,
-    string? Description
+    string? Description,
+    string Pin
 );
 
 /// <summary>
@@ -25,7 +27,8 @@ public record TransferRequest(
     Guid FromAccountId,
     Guid ToAccountId,
     decimal Amount,
-    string? Description
+    string? Description,
+    string Pin
 );
 
 /// <summary>

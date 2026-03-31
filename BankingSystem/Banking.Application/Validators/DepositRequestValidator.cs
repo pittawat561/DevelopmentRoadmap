@@ -18,5 +18,10 @@ public class DepositRequestValidator : AbstractValidator<DepositRequest>
         RuleFor(x => x.Description)
             .MaximumLength(500)
             .When(x => x.Description is not null);
+
+        RuleFor(x => x.Pin)
+            .NotEmpty().WithMessage("PIN is required.")
+            .Length(6).WithMessage("PIN must be exactly 6 digits.")
+            .Matches(@"^\d{6}$").WithMessage("PIN must contain only digits.");
     }
 }

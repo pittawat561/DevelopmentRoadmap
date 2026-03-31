@@ -1,0 +1,13 @@
+# BankingSystem/.dockerignore
+
+**/bin/
+**/obj/
+**/node_modules/
+**/.git/
+**/.vs/
+**/.vscode/
+**/Dockerfile*
+**/.dockerignore
+**/*.md
+**/Banking.Tests.Unit/
+**/Banking.Tests.Integration/

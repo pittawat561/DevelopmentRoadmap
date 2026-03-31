@@ -1,10 +1,10 @@
 ﻿using Banking.Application.DTOs;
-using Banking.Application.Services;
 using Banking.Domain.Entities;
 using Banking.Domain.Enums;
 using Banking.Domain.Exceptions;
 using Banking.Domain.Interfaces;
-using BCrypt.Net;
+using System.Net;
+using System.Security.Principal;
 
 namespace Banking.Application.Services;
 

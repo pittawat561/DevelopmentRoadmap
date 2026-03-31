@@ -1,0 +1,22 @@
+notify:
+  name: Slack Notification
+  runs-on: ubuntu-latest
+  needs: [deploy]
+  if: always()
+  steps:
+    - uses: slackapi/slack-github-action@v2.0.0
+      with:
+        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook-type: incoming-webhook
+        payload: |
+          {
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": "${{ needs.deploy.result == 'success' && ':white_check_mark:' || ':x:' }} *${{ github.workflow }}*\n*Status:* ${{ needs.deploy.result }}\n*Branch:* `${{ github.ref_name }}`\n*Commit:* `${{ github.sha }}`\n*Actor:* ${{ github.actor }}"
+                }
+              }
+            ]
+          }

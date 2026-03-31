@@ -21,6 +21,12 @@ public class AppDbContext: DbContext
     /// <param name="options">ตัวเลือกการตั้งค่า เช่น database provider และ connection string</param>
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
+    /// <summary>
+    /// Protected constructor สำหรับ derived classes (ReadOnlyDbContext)
+    /// ใช้ DbContextOptions non-generic เพื่อให้ subclass ส่ง options ของตัวเองมาได้
+    /// </summary>
+    protected AppDbContext(DbContextOptions options) : base(options) { }
+
     // === DbSet Properties ===
     // แต่ละ DbSet จะกลายเป็น 1 table ใน database
     // Set<T>() — method ของ DbContext ที่คืน DbSet<T> สำหรับ Entity ที่ระบุ

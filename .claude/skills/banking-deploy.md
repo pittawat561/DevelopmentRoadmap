@@ -87,7 +87,7 @@ services:
     environment:
       POSTGRES_DB: banking
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres123
+      POSTGRES_PASSWORD: root1234
     volumes:
       - postgres_data:/var/lib/postgresql/data
 

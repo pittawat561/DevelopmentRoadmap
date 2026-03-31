@@ -161,3 +161,6 @@ dump.rdb
 *.tmp
 *.temp
 *.cache
+
+# ===== Banking System =====
+.env

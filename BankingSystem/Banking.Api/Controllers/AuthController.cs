@@ -16,17 +16,20 @@ public class AuthController : ControllerBase
     private readonly IValidator<RegisterRequest> _registerValidator;
     private readonly IValidator<LoginRequest> _loginValidator;
     private readonly IRedisCacheService _cache;
+    private readonly PinService _pinService;
 
     public AuthController(
         AuthService authService,
         IValidator<RegisterRequest> registerValidator,
         IValidator<LoginRequest> loginValidator,
-        IRedisCacheService cache)
+        IRedisCacheService cache,
+        PinService pinService)
     {
         _authService = authService;
         _registerValidator = registerValidator;
         _loginValidator = loginValidator;
         _cache = cache;
+        _pinService = pinService;
     }
 
     [HttpPost("register")]
@@ -101,5 +104,41 @@ public class AuthController : ControllerBase
         }
 
         return Ok(new ApiResponse<object>(true, "Logged out successfully."));
+    }
+    /// <summary>
+    /// ตั้ง PIN ครั้งแรก — POST /api/auth/pin/set
+    /// </summary>
+    [HttpPost("pin/set")]
+    [Authorize]
+    public async Task<IActionResult> SetPin(
+        [FromBody] SetPinRequest request, CancellationToken ct)
+    {
+        var userId = GetUserId();
+        if (userId is null) return Unauthorized();
+
+        await _pinService.SetPinAsync(userId.Value, request, ct);
+        return Ok(new ApiResponse<object>(true, "PIN set successfully."));
+    }
+
+    /// <summary>
+    /// เปลี่ยน PIN — POST /api/auth/pin/change
+    /// </summary>
+    [HttpPost("pin/change")]
+    [Authorize]
+    public async Task<IActionResult> ChangePin(
+        [FromBody] ChangePinRequest request, CancellationToken ct)
+    {
+        var userId = GetUserId();
+        if (userId is null) return Unauthorized();
+
+        await _pinService.ChangePinAsync(userId.Value, request, ct);
+        return Ok(new ApiResponse<object>(true, "PIN changed successfully."));
+    }
+
+    // Helper: ดึง userId จาก JWT
+    private Guid? GetUserId()
+    {
+        var claim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        return claim is not null ? Guid.Parse(claim) : null;
     }
 }

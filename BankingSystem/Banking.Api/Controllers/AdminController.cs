@@ -103,4 +103,21 @@ public class AdminController : ControllerBase
         return Ok(new ApiResponse<object>(true,
             $"User {user.FullName} has been unlocked."));
     }
+
+    [HttpPost("user/{id:guid}/reset-pin-lock")]
+    public async Task<IActionResult> ResetPinLock(Guid id, CancellationToken ct)
+    {
+        var user = await _unitOfWork.Users.GetByIdAsync(id, ct);
+        if (user is null)
+            return NotFound(new ApiResponse<object>(false, "User not found."));
+
+        user.IsTransactionLocked = false;
+        user.FailedLoginAttempts = 0;
+        user.PinHash = null;
+        _unitOfWork.Users.Update(user);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        return Ok(new ApiResponse<object>(true, $"Transaction lock reset for {user.FullName}. User must set a new PIN."));
+
+    }
 }

@@ -1856,9 +1856,10 @@ app.Run();
 ### 10.1 Build + Run
 
 ```bash
-# 1. ตรวจสอบว่า Redis รันอยู่
-docker start banking-redis
-# หรือ: redis-cli ping → PONG
+# 1. ตรวจสอบว่า Redis (Memurai) รันอยู่
+memurai-cli ping
+# ผลลัพธ์: PONG
+# หาก PONG ไม่ขึ้น → เปิด Services (services.msc) แล้วตรวจสอบว่า Memurai service กำลังรันอยู่
 
 # 2. Build
 cd BankingSystem
@@ -1872,14 +1873,46 @@ dotnet run --project Banking.Api
 
 ### 10.2 ทดสอบ Rate Limiting
 
-```bash
-# ส่ง request ซ้ำๆ เกิน 10 ครั้ง/นาที
-for i in {1..15}; do
-  curl -s -o /dev/null -w "%{http_code}" \
-    https://localhost:xxxx/api/accounts?userId=xxx
-done
+Rate Limit ใช้ userId จาก JWT token → ต้อง login ก่อนถึงจะทดสอบได้
+ค่า default: 10 requests/นาที/endpoint (ตั้งใน `appsettings.json` → `Redis:RateLimitMaxRequests`)
 
-# request ที่ 11-15 ควรได้ 429 Too Many Requests
+**วิธี A: ทดสอบผ่าน Swagger UI**
+
+```
+1. เปิด Swagger: https://localhost:7297/swagger
+2. Login ก่อน:
+   POST /api/auth/login → ได้ accessToken
+3. กด "Authorize" (ปุ่มแม่กุญแจ) → ใส่ "Bearer eyJ..."
+4. เลือก endpoint ที่ต้องการทดสอบ เช่น GET /api/accounts
+5. กด "Execute" ซ้ำๆ เร็วๆ มากกว่า 10 ครั้ง
+6. ครั้งที่ 11+ จะได้ 429 Too Many Requests
+7. รอ 1 นาที → request จะกลับมาใช้ได้อีกครั้ง
+```
+
+**วิธี B: ทดสอบผ่าน PowerShell**
+
+```powershell
+# 1. Login เอา token ก่อน
+$response = Invoke-RestMethod -Uri "https://localhost:7297/api/auth/login" `
+  -Method POST -ContentType "application/json" `
+  -Body '{"email":"your@email.com","password":"yourpassword"}'
+$token = $response.data.accessToken
+
+# 2. ส่ง request 15 ครั้งติด
+$headers = @{ Authorization = "Bearer $token" }
+for ($i = 1; $i -le 15; $i++) {
+    try {
+        $r = Invoke-WebRequest -Uri "https://localhost:7297/api/accounts" `
+          -Headers $headers -ErrorAction Stop
+        Write-Host "Request $i : $($r.StatusCode)"
+    } catch {
+        Write-Host "Request $i : $($_.Exception.Response.StatusCode.value__) (Rate Limited!)"
+    }
+}
+
+# ผลลัพธ์ที่ควรได้:
+# Request 1-10 : 200
+# Request 11-15 : 429 (Rate Limited!)
 ```
 
 ### 10.3 ทดสอบ Token Blacklist (Logout จริง)

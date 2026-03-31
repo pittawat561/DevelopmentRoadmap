@@ -1,0 +1,24 @@
+name: "Setup .NET Environment"
+description: "Setup .NET SDK with NuGet cache"
+
+inputs:
+  dotnet-version:
+    description: ".NET SDK version"
+    required: false
+    default: "10.0.x"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Setup .NET SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ inputs.dotnet-version }}
+
+    - name: Cache NuGet packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.nuget/packages
+        key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+        restore-keys: |
+          nuget-${{ runner.os }}-

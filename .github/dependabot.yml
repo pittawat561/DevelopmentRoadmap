@@ -1,0 +1,14 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "nuget"
+    directory: "/BankingSystem"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "npm"
+    directory: "/banking-frontend"
+    schedule:
+      interval: "weekly"

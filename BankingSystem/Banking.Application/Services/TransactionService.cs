@@ -19,15 +19,21 @@ public class TransactionService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IRedisCacheService _cache;
     private readonly INotificationService _notification;
+    private readonly PinService _pinService;
+    private readonly IAuditService _auditService;
 
     public TransactionService(
         IUnitOfWork unitOfWork,
         IRedisCacheService cache,
-        INotificationService notification)
+        INotificationService notification,
+        PinService pinService,
+        IAuditService auditService)
     {
         _unitOfWork = unitOfWork;
         _cache = cache;
         _notification = notification;
+        _pinService = pinService;
+        _auditService = auditService;
     }
 
     // =====================================================
@@ -51,10 +57,16 @@ public class TransactionService
     ///   Lock ทำให้คนที่ 2 รอ → อ่าน balance ที่ถูกต้อง
     /// </summary>
     public async Task<TransactionResponse> DepositAsync(
-        DepositRequest request, string? ipAddress = null, CancellationToken ct = default)
+        DepositRequest request,
+        Guid userId,
+        string pin,
+        string? ipAddress = null,
+        CancellationToken ct = default)
     {
         if (request.Amount <= 0)
             throw new ArgumentException("Amount must be greater than 0.");
+
+        await _pinService.VerifyPinAsync(userId, pin, ct);
 
         // === Distributed Lock ===
         var lockKey = $"account:{request.AccountId}";
@@ -104,6 +116,17 @@ public class TransactionService
             await _cache.SetBalanceCacheAsync(
                 account.Id, account.Balance, account.AvailableBalance);
 
+            // === Audit Log: บันทึกประวัติการทำงาน (วางตรงนี้) ===
+            await _auditService.LogAsync(
+                userId: userId,
+                action: "Deposit",
+                entityType: "Transaction",
+                entityId: transaction.Id.ToString(),
+                oldValues: new { BalanceBefore = balanceBefore },
+                newValues: new { BalanceAfter = account.Balance, Amount = request.Amount },
+                ipAddress: ipAddress
+            );
+
             // === Notify: แจ้ง client real-time ===
             await _notification.NotifyBalanceUpdatedAsync(
                 account.UserId, account.Id,
@@ -152,10 +175,16 @@ public class TransactionService
     ///   เช่น limit 50,000 → ถอนได้สูงสุด 50,000/วัน
     /// </summary>
     public async Task<TransactionResponse> WithdrawAsync(
-        WithdrawRequest request, string? ipAddress = null, CancellationToken ct = default)
+        WithdrawRequest request,
+        Guid userId,
+        string pin,
+        string? ipAddress = null, CancellationToken ct = default)
     {
         if (request.Amount <= 0)
             throw new ArgumentException("Amount must be greater than 0.");
+
+        // ตรวจ PIN ก่อนทำธุรกรรม
+        await _pinService.VerifyPinAsync(userId, pin, ct);
 
         var lockKey = $"account:{request.AccountId}";
         var lockValue = Guid.NewGuid().ToString();
@@ -258,13 +287,19 @@ public class TransactionService
     ///   DB Transaction ทำให้สำเร็จทั้งคู่หรือไม่ทำเลย
     /// </summary>
     public async Task<TransactionResponse> TransferAsync(
-        TransferRequest request, string? ipAddress = null, CancellationToken ct = default)
+        TransferRequest request,
+        Guid userId,
+        string pin,
+        string? ipAddress = null, CancellationToken ct = default)
     {
         if (request.Amount <= 0)
             throw new ArgumentException("Amount must be greater than 0.");
 
         if (request.FromAccountId == request.ToAccountId)
             throw new ArgumentException("Cannot transfer to the same account.");
+
+        // ตรวจ PIN ก่อนทำธุรกรรม
+        await _pinService.VerifyPinAsync(userId, pin, ct);
 
         // Lock ตามลำดับ ID → ป้องกัน deadlock
         var firstId = request.FromAccountId < request.ToAccountId

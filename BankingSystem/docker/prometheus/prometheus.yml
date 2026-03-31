@@ -1,0 +1,32 @@
+global:
+  scrape_interval: 15s      # เก็บ metrics ทุก 15 วินาที
+  evaluation_interval: 15s   # evaluate rules ทุก 15 วินาที
+
+scrape_configs:
+  # ===== API Servers =====
+  - job_name: "banking-api"
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - "api-1:8080"
+          - "api-2:8080"
+          - "api-3:8080"
+        labels:
+          service: "banking-api"
+
+  # ===== Nginx =====
+  - job_name: "nginx"
+    static_configs:
+      - targets: ["nginx:80"]
+        labels:
+          service: "nginx"
+
+  # ===== PostgreSQL (ต้องติดตั้ง postgres_exporter) =====
+  # - job_name: "postgres"
+  #   static_configs:
+  #     - targets: ["postgres-exporter:9187"]
+
+  # ===== Redis (ต้องติดตั้ง redis_exporter) =====
+  # - job_name: "redis"
+  #   static_configs:
+  #     - targets: ["redis-exporter:9121"]

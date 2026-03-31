@@ -1,0 +1,72 @@
+name: Reusable .NET Build
+
+on:
+  workflow_call:
+    inputs:
+      configuration:
+        required: false
+        type: string
+        default: "Release"
+      run-integration-tests:
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: banking_test
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: banking_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+
+      - run: dotnet restore BankingSystem/BankingSystem.slnx
+
+      - run: dotnet build BankingSystem/BankingSystem.slnx --no-restore -c ${{ inputs.configuration }}
+
+      - name: Unit Tests
+        run: dotnet test BankingSystem/Banking.Tests.Unit --no-build -c ${{ inputs.configuration }}
+
+      - name: Integration Tests
+        if: inputs.run-integration-tests
+        run: dotnet test BankingSystem/Banking.Tests.Integration --no-build -c ${{ inputs.configuration }}
+        env:
+          ConnectionStrings__DefaultConnection: "Host=localhost;Port=5432;Database=banking_test;Username=banking_test;Password=test_password"
+          ConnectionStrings__Redis: "localhost:6379"
+          Jwt__Key: "TestSecretKeyForCICD_AtLeast256Bits!!"
+          Jwt__Issuer: "BankingSystem.Test"
+          Jwt__Audience: "BankingSystem.Test"

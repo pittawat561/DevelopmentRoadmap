@@ -1,0 +1,81 @@
+name: Database Migration
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      migration_action:
+        description: "Migration action"
+        required: true
+        type: choice
+        options:
+          - migrate
+          - status
+          - rollback-last
+
+jobs:
+  migrate:
+    name: Run Migration (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Install EF Core tools
+        run: dotnet tool install --global dotnet-ef
+
+      # ===== STATUS =====
+      - name: Check migration status
+        if: inputs.migration_action == 'status'
+        run: |
+          dotnet ef migrations list \
+            --project BankingSystem/Banking.Infrastructure \
+            --startup-project BankingSystem/Banking.Api
+        env:
+          ConnectionStrings__DefaultConnection: ${{ secrets.DB_CONNECTION_STRING }}
+
+      # ===== MIGRATE =====
+      - name: Apply pending migrations
+        if: inputs.migration_action == 'migrate'
+        run: |
+          echo "Applying migrations to ${{ inputs.environment }}..."
+          dotnet ef database update \
+            --project BankingSystem/Banking.Infrastructure \
+            --startup-project BankingSystem/Banking.Api \
+            --verbose
+        env:
+          ConnectionStrings__DefaultConnection: ${{ secrets.DB_CONNECTION_STRING }}
+          ASPNETCORE_ENVIRONMENT: Development
+
+      # ===== ROLLBACK =====
+      - name: Rollback last migration
+        if: inputs.migration_action == 'rollback-last'
+        run: |
+          echo "WARNING: Rolling back last migration on ${{ inputs.environment }}!"
+          # ดึงชื่อ migration ก่อนหน้า
+          PREVIOUS=$(dotnet ef migrations list \
+            --project BankingSystem/Banking.Infrastructure \
+            --startup-project BankingSystem/Banking.Api \
+            | tail -2 | head -1 | xargs)
+
+          echo "Rolling back to: $PREVIOUS"
+          dotnet ef database update "$PREVIOUS" \
+            --project BankingSystem/Banking.Infrastructure \
+            --startup-project BankingSystem/Banking.Api
+        env:
+          ConnectionStrings__DefaultConnection: ${{ secrets.DB_CONNECTION_STRING }}
+          ASPNETCORE_ENVIRONMENT: Development

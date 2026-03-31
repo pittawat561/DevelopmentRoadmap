@@ -1,0 +1,138 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # รันทุกวันจันทร์ 09:00 (UTC+7 = 02:00 UTC)
+    - cron: "0 2 * * 1"
+
+jobs:
+  # ===== CODEQL ANALYSIS =====
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    strategy:
+      matrix:
+        language: ["csharp", "javascript"]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+
+      - name: Setup .NET SDK
+        if: matrix.language == 'csharp'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build .NET (for CodeQL)
+        if: matrix.language == 'csharp'
+        run: dotnet build BankingSystem/BankingSystem.slnx
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+
+  # ===== DEPENDENCY AUDIT =====
+  dependency-audit:
+    name: Dependency Vulnerability Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # NuGet vulnerability check
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Audit NuGet packages
+        run: |
+          dotnet restore BankingSystem/BankingSystem.slnx
+          dotnet list BankingSystem/BankingSystem.slnx package --vulnerable --include-transitive 2>&1 | tee nuget-audit.txt
+
+          if grep -q "has the following vulnerable packages" nuget-audit.txt; then
+            echo "WARNING: Vulnerable NuGet packages found!"
+            cat nuget-audit.txt
+            # ไม่ fail build แต่แจ้งเตือน (เปลี่ยนเป็น exit 1 ถ้าต้องการ strict)
+          else
+            echo "No vulnerable NuGet packages found."
+          fi
+
+      # npm vulnerability check
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Audit npm packages
+        working-directory: banking-frontend
+        run: |
+          npm ci
+          npm audit --audit-level=high || echo "npm audit found issues (review above)"
+
+  # ===== SECRET SCANNING =====
+  secret-scan:
+    name: Secret Detection
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ===== DOCKER IMAGE SCAN =====
+  image-scan:
+    name: Container Image Scan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image (local)
+        run: |
+          docker build \
+            -t banking-api:scan \
+            -f BankingSystem/Banking.Api/Dockerfile \
+            BankingSystem/
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "banking-api:scan"
+          format: "sarif"
+          output: "trivy-results.sarif"
+          severity: "CRITICAL,HIGH"
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: "trivy-results.sarif"

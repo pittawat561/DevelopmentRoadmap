@@ -94,4 +94,23 @@ public class User : BaseEntity
     /// EF Core จะโหลดข้อมูลจริงจาก database เมื่อเรียกใช้ (Lazy/Eager Loading)
     /// </summary>
     public ICollection<Account> Accounts { get; set; } = new List<Account>();
+
+    /// <summary>
+    /// PIN 6 หลัก — Hash ด้วย BCrypt เหมือน password
+    /// ห้ามเก็บ plaintext!
+    /// null = ยังไม่ตั้ง PIN (บังคับตั้งก่อนทำธุรกรรมแรก)
+    /// </summary>
+    public string? PinHash { get; set; }
+
+    /// <summary>
+    /// นับจำนวน PIN ผิดติดต่อกัน
+    /// ถึง 3 ครั้ง → ล็อกธุรกรรม (ต้อง reset PIN)
+    /// </summary>
+    public int FailedPinAttempts { get; set; } = 0;
+
+    /// <summary>
+    /// ธุรกรรมถูกล็อก (PIN ผิดเกิน)
+    /// ต่างจาก IsLocked (login ถูกล็อก)
+    /// </summary>
+    public bool IsTransactionLocked { get; set; } = false;
 }

@@ -1,12 +1,15 @@
 using Banking.Application.DTOs;
 using Banking.Application.Services;
 using FluentValidation;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 
 namespace Banking.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class TransactionsController : ControllerBase
 {
     private readonly TransactionService _transactionService;
@@ -39,8 +42,12 @@ public class TransactionsController : ControllerBase
             return BadRequest(new ApiResponse<object>(false,
                 string.Join("; ", validation.Errors.Select(e => e.ErrorMessage))));
 
+        var userId = GetUserId();
+        if (userId is null) return Unauthorized();
+
         var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
-        var result = await _transactionService.DepositAsync(request, ipAddress, ct);
+        var result = await _transactionService.DepositAsync(
+            request, userId.Value, request.Pin, ipAddress, ct);
         return Ok(new ApiResponse<TransactionResponse>(
             true, $"Deposit of {request.Amount:N2} THB completed.", result));
     }
@@ -58,8 +65,12 @@ public class TransactionsController : ControllerBase
             return BadRequest(new ApiResponse<object>(false,
                 string.Join("; ", validation.Errors.Select(e => e.ErrorMessage))));
 
+        var userId = GetUserId();
+        if (userId is null) return Unauthorized();
+
         var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
-        var result = await _transactionService.WithdrawAsync(request, ipAddress, ct);
+        var result = await _transactionService.WithdrawAsync(
+            request, userId.Value, request.Pin, ipAddress, ct);
         return Ok(new ApiResponse<TransactionResponse>(
             true, $"Withdrawal of {request.Amount:N2} THB completed.", result));
     }
@@ -77,8 +88,12 @@ public class TransactionsController : ControllerBase
             return BadRequest(new ApiResponse<object>(false,
                 string.Join("; ", validation.Errors.Select(e => e.ErrorMessage))));
 
+        var userId = GetUserId();
+        if (userId is null) return Unauthorized();
+
         var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
-        var result = await _transactionService.TransferAsync(request, ipAddress, ct);
+        var result = await _transactionService.TransferAsync(
+            request, userId.Value, request.Pin, ipAddress, ct);
         return Ok(new ApiResponse<TransactionResponse>(
             true, $"Transfer of {request.Amount:N2} THB completed.", result));
     }
@@ -99,5 +114,11 @@ public class TransactionsController : ControllerBase
 
         return Ok(new ApiResponse<PagedResponse<TransactionResponse>>(
             true, "Transaction history retrieved.", result));
+    }
+
+    private Guid? GetUserId()
+    {
+        var claim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        return claim is not null ? Guid.Parse(claim) : null;
     }
 }

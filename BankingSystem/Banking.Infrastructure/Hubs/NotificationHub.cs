@@ -1,8 +1,9 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Logging;
 using System.Security.Claims;
 
-namespace Banking.Api.Hubs;
+namespace Banking.Infrastructure.Hubs;
 
 /// <summary>
 /// SignalR Hub สำหรับ real-time notifications

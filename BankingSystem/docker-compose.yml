@@ -1,0 +1,213 @@
+# BankingSystem/docker-compose.yml
+
+version: "3.9"
+
+services:
+  # ===== PostgreSQL Primary =====
+  postgres-primary:
+    image: postgres:16-alpine
+    container_name: banking-postgres-primary
+    environment:
+      POSTGRES_DB: banking_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-root1234}
+      # Replication settings
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    volumes:
+      - postgres-primary-data:/var/lib/postgresql/data
+      - ./docker/postgres/init-primary.sh:/docker-entrypoint-initdb.d/init-primary.sh
+      - ./docker/postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf
+    ports:
+      - "5432:5432"
+    networks:
+      - banking-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Performance tuning
+    command: >
+      postgres
+      -c wal_level=replica
+      -c max_wal_senders=3
+      -c max_replication_slots=3
+      -c hot_standby=on
+      -c shared_buffers=256MB
+      -c effective_cache_size=768MB
+      -c work_mem=4MB
+      -c max_connections=200
+
+  # ===== PostgreSQL Read Replica =====
+  postgres-replica:
+    image: postgres:16-alpine
+    container_name: banking-postgres-replica
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-root1234}
+      PGUSER: postgres
+      PGPASSWORD: ${DB_PASSWORD:-root1234}
+    volumes:
+      - postgres-replica-data:/var/lib/postgresql/data
+      - ./docker/postgres/init-replica.sh:/docker-entrypoint-initdb.d/init-replica.sh
+    ports:
+      - "5433:5432"
+    networks:
+      - banking-network
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+
+  # ===== Redis (Standalone สำหรับ development) =====
+  redis:
+    image: redis:7-alpine
+    container_name: banking-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+      - ./docker/redis/redis.conf:/usr/local/etc/redis/redis.conf
+    networks:
+      - banking-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: redis-server /usr/local/etc/redis/redis.conf
+
+  # ===== API Instance 1 =====
+  api-1:
+    build:
+      context: .
+      dockerfile: Banking.Api/Dockerfile
+    container_name: banking-api-1
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__DefaultConnection: >-
+        Host=postgres-primary;Database=banking_db;Username=postgres;Password=${DB_PASSWORD:-root1234}
+      ConnectionStrings__Redis: "redis:6379,abortConnect=false"
+      Jwt__Key: ${JWT_KEY:-YourSuperSecretKeyAtLeast32CharactersLong}
+      Jwt__Issuer: banking-api
+      Jwt__Audience: banking-frontend
+      Frontend__Url: ${FRONTEND_URL:-http://localhost:3000}
+      Swagger__Enabled: "true"
+    networks:
+      - banking-network
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ===== API Instance 2 =====
+  api-2:
+    build:
+      context: .
+      dockerfile: Banking.Api/Dockerfile
+    container_name: banking-api-2
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__DefaultConnection: >-
+        Host=postgres-primary;Database=banking_db;Username=postgres;Password=${DB_PASSWORD:-root1234}
+      ConnectionStrings__Redis: "redis:6379,abortConnect=false"
+      Jwt__Key: ${JWT_KEY:-YourSuperSecretKeyAtLeast32CharactersLong}
+      Jwt__Issuer: banking-api
+      Jwt__Audience: banking-frontend
+      Frontend__Url: ${FRONTEND_URL:-http://localhost:3000}
+      Swagger__Enabled: "true"
+    networks:
+      - banking-network
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ===== API Instance 3 =====
+  api-3:
+    build:
+      context: .
+      dockerfile: Banking.Api/Dockerfile
+    container_name: banking-api-3
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__DefaultConnection: >-
+        Host=postgres-primary;Database=banking_db;Username=postgres;Password=${DB_PASSWORD:-root1234}
+      ConnectionStrings__Redis: "redis:6379,abortConnect=false"
+      Jwt__Key: ${JWT_KEY:-YourSuperSecretKeyAtLeast32CharactersLong}
+      Jwt__Issuer: banking-api
+      Jwt__Audience: banking-frontend
+      Frontend__Url: ${FRONTEND_URL:-http://localhost:3000}
+      Swagger__Enabled: "true"
+    networks:
+      - banking-network
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ===== Nginx Load Balancer =====
+  nginx:
+    image: nginx:alpine
+    container_name: banking-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/nginx/ssl:/etc/nginx/ssl:ro
+    networks:
+      - banking-network
+    depends_on:
+      - api-1
+      - api-2
+      - api-3
+    restart: unless-stopped
+
+  # ===== Prometheus (Monitoring) =====
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: banking-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - banking-network
+    restart: unless-stopped
+
+  # ===== Grafana (Dashboard) =====
+  grafana:
+    image: grafana/grafana:latest
+    container_name: banking-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin123}
+    volumes:
+      - grafana-data:/var/lib/grafana
+    networks:
+      - banking-network
+    restart: unless-stopped
+
+# ===== Volumes =====
+volumes:
+  postgres-primary-data:
+  postgres-replica-data:
+  redis-data:
+  prometheus-data:
+  grafana-data:
+
+# ===== Network =====
+networks:
+  banking-network:
+    driver: bridge
